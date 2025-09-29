@@ -11,11 +11,12 @@
 </td>
 <td width="60%" align="center" valign="middle">
 
-<img src="https://github.com/lilab-stanford/CANVAS/blob/main/Abstruct_figure/CANVAS_image.png">
+<img src="https://github.com/lilab-stanford/CANVAS/blob/main/Abstract_figure/CANVAS_image.png">
 
 </td>
 </tr>
 </table>
+
 
 ### 🔧 Key Modules
 
@@ -23,7 +24,7 @@
 
 CANVAS leverages a vision–language foundation model trained on paired CODEX and H&E whole-slide images to infer CN-defined ecological habitats directly from unannotated histology. This module integrates:
 
-- Use the palom package to co-register CODEX and H&E images, and to map CODEX-defined cellular neighborhoods onto histology
+- Co-register CODEX and H&E images at single-cell resolution and map CODEX-defined cellular neighborhoods onto histology
 - Use cn_assignment to generate habitat labels for training and validation
 - Train a vision–language model to predict habitat classes from H&E images based on the co-registered CNs
 - Predict habitat classes on H&E images using the trained model
@@ -44,8 +45,8 @@ For each inferred habitat, CANVAS extracts a suite of biologically interpretable
 
 - **Composition:** Quantifies the relative abundance of each spatial habitat within the tissue section
 - **Diversity:** Measures habitat heterogeneity using metrics such as Shannon index, Fisher’s alpha, and richness
-- **Spatial dispersion:** Captures habitat-level spatial organization using Ripley’s K, L, and F functions, Clark–Evans index, and kernel density
-- **Interaction:** Quantifies pairwise spatial relationships between habitats using permutation-based analysis
+- **Spatial dispersion:** Describes habitat spatial distribution based on Ripley’s K, L, and F functions, as well as related metrics
+- **Interaction:** Quantifies pairwise spatial associations between habitats using permutation-based analysis
 - **Distance:** Computes directional Euclidean distances between habitat pairs
 - **Transition entropy:** Non-Euclidean metrics reflecting the internal complexity and interfacial dynamics of the spatial architecture
 
@@ -72,7 +73,7 @@ To identify clinically meaningful spatial biomarkers, CANVAS performs:
 Rscript Feature_selection_modeling/feature_selection_modeling.R
 ```
 
-**Output:** Refined biomarker panels and risk prediction models for immunotherapy outcomes.
+**Output:** Refined panels of spatial biomarkers and risk prediction models with translational relevance for immunotherapy.
 
 #### (4) AI-Agent module for spatial feature interpretation
 
@@ -86,6 +87,13 @@ The agent generates structured, human-interpretable outputs across five key biol
 - (iv) Tendency for topological coupling with other habitats
 - (v) Potential biological and clinical relevance
 
+**Setup:**
+
+```bash
+export OPENAI_API_KEY="<your-openai-api-key>"
+# Optional: only if you route through a custom endpoint
+export OPENAI_BASE_URL="https://your-custom-endpoint"
+```
 **Run:**
 
 ```bash
@@ -101,15 +109,16 @@ python AI_Agent/run.py
 - Immunotherapy response stratification in NSCLC and other solid tumors using spatially resolved habitat features
 - Habitat-informed prognostic modeling across large-scale cohorts including TCGA, PLCO, and NLST
 - Patient subtyping independent of PD-L1 expression levels or canonical oncogenic mutations (e.g., EGFR, KRAS)
-- Virtual spatial proteomic annotation directly inferred from standard H&E histology, enabling scalable tissue profiling without multiplex staining
+- Virtual reconstruction of the tumor–immune ecosystem directly from routine H&E histology, enabling scalable tissue profiling without multiplex staining
 
 ---
 
-### 📦 Installation
+### 📦 Installation and Basic Usage
 
 We recommend using `conda` to manage environments for CANVAS.
 
 ```bash
+#Please install MUSK first (required): https://github.com/lilab-stanford/MUSK
 conda create -n canvas_env python=3.8
 conda activate canvas_env
 pip install -r requirements.txt
@@ -121,34 +130,85 @@ R packages used include:
 install.packages(c("survival", "glmnet", "randomForestSRC", "ggplot2", "vegan", "entropy", "spatstat"))
 ```
 
+### Basic Usage
+1. Load the model
+```bash
+from Habitat_prediction.api import load_model, predict_folder
+
+model, device = load_model(
+    # weights=str(WEIGHTS_PATH),    # optional: specify custom path if not using default
+    # By default, CANVAS will look for `reference_weight.pth` under Habitat_prediction/  
+    # Reference model weights available at Zenodo: https://doi.org/10.5281/zenodo.17220060
+    musk_source=MUSK_SOURCE,      # hf_hub or local path to MUSK backbone
+)
+print("Loaded model on:", device)
+
+```
+2. Run inference on all images under the folder
+```bash
+import pandas as pd
+from pathlib import Path
+
+df = predict_folder(
+    model, device, DEMO_DIR,
+    img_size=384, batch_size=64,
+)
+
+OUT_DIR = Path("Demo_data"); OUT_DIR.mkdir(exist_ok=True)
+out_csv = OUT_DIR / "output.csv"
+df.to_csv(out_csv, index=False)
+print("Saved")
+```
+
+
 ---
 
 ### 📂 Directory Structure
 
 ```
 CANVAS/
-├── README.md                          # Project documentation and usage instructions
-
-├── Demo_data/                         # Example dataset
-│   └── Spatial_feature_matrix.csv     # CANVAS-derived spatial feature matrix for each sample
-
-├── Habitat_prediction/                # Module 1: CN-to-habitat prediction via a vision–language foundation model
-│   ├── cn_assignment.py               # Co-registration of CODEX and H&E images at single-cell resolution
-│   ├── habitat_prediction.py          # Predicts ecological habitats from CN annotations
-│   └── habitat_training.py            # Trains vision–language model for habitat prediction
-
-├── Feature_generation/                # Module 2: Habitat-level spatial feature generation
-│   └── Spatial_metrics.R              # Calculates composition, diversity, interaction, and other spatial metrics
-
-├── Feature_selection_modeling/        # Module 3: Feature selection and prognostic modeling
-│   └── feature_selection_modeling.R   # Performs Bootstrap LASSO, random forest, and Cox regression modeling
-
-├── AI_agent/                          # Module 4: AI-Agent module for spatial feature interpretation
-│   └── AI_agent.py                    # Interactive agent for habitat-level biological and clinical annotation
-
-├── Abstruct_figure/                   # Folder for figures used in the abstract or main text
-
-
+│
+│   demo.ipynb                 # Example Jupyter notebook demonstrating CANVAS workflow
+│   README.md                  # Project documentation and usage instructions
+│   requirements.txt           # Python dependencies for running CANVAS
+│
+├── Abstract_figure/           # Figures used for abstract or manuscript illustration
+│   └── CANVAS_image.png       # Thumbnail of CANVAS
+│
+├── AI_Agent/                  # Module 4: AI-Agent for spatial feature interpretation
+│   │   Instruction for AI agent.docx   # Documentation of AI-agent usage
+│   │   README.md                        # Module-specific documentation
+│   │   requirements.txt                 # Dependencies for AI-agent module
+│   │   run.py                           # Main script to launch AI-agent
+│   │   spatial_agent.py                 # Core implementation of AI-agent
+│   │
+│   └── data/                            # Supporting annotation files for AI-agent
+│       ├── Feature_annotation.xlsx      # Definitions and biological annotation of spatial features
+│       └── Habitat_annotation.docx      # Annotation of habitats and ecological interpretation
+│
+├── Demo_data/                 # Example datasets for demonstration
+│   ├── 28000_56224.png        # Example tissue image (demo figure)
+│   ├── 67424_15680.png        # Example tissue image (demo figure)
+│   ├── output.csv             # Example model output (demo results)
+│
+├── Feature_generation/        # Module 2: Habitat-level spatial feature generation
+│   ├── Distance_calculation.py  # Computes pairwise distances among habitats
+│   ├── Habitat_freq.R           # Quantifies habitat frequency per sample
+│   ├── Habitat_interaction.py   # Computes inter-habitat interactions
+│   ├── Spatial_diversity.R      # Calculates diversity indices (Shannon, Simpson, etc.)
+│   ├── Spatial_entropy.R        # Computes spatial transition entropy (STE)
+│   └── Spatial_metrics.R        # Master script for habitat-level spatial dispersion
+│
+├── Feature_selection_modeling/   # Module 3: Feature selection and prognostic modeling
+│   └── feature_selection_modeling.R  # Performs Bootstrap LASSO, random forest, Cox regression
+│
+└── Habitat_prediction/         # Module 1: CN-to-habitat prediction using vision–language model
+    ├── api.py                  # API wrapper for model inference
+    ├── cn_assignment.py        # Co-registers CODEX and H&E images at single-cell resolution
+    ├── habitat_prediction.py   # Predicts ecological habitats from CN annotations
+    ├── habitat_training.py     # Trains the vision–language model for habitat prediction
+    ├── model.py                # Core model architecture definition
+    └── reference_weight.pth    # Reference model weights for habitat prediction (available at Zenodo: [10.5281/zenodo.17220060](https://zenodo.org/records/17220060))
 ```
 
 ### 📄 Citation
