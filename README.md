@@ -118,7 +118,7 @@ python AI_Agent/run.py
 We recommend using `conda` to manage environments for CANVAS.
 
 ```bash
-#Please install MUSK first (required): https://github.com/lilab-stanford/MUSK
+#Please install MUSK first (required)
 conda create -n canvas_env python=3.8
 conda activate canvas_env
 pip install -r requirements.txt
@@ -136,13 +136,10 @@ install.packages(c("survival", "glmnet", "randomForestSRC", "ggplot2", "vegan", 
 from Habitat_prediction.api import load_model, predict_folder
 
 model, device = load_model(
-    # weights=str(WEIGHTS_PATH),    # optional: specify custom path if not using default
-    # By default, CANVAS will look for `reference_weight.pth` under Habitat_prediction/  
-    # Reference model weights available at Zenodo: https://doi.org/10.5281/zenodo.17220060
+    #weights=str(WEIGHTS_PATH),    # optional: local weights only
     musk_source=MUSK_SOURCE,      # hf_hub or local path to MUSK backbone
 )
 print("Loaded model on:", device)
-
 ```
 2. Run inference on all images under the folder
 ```bash
