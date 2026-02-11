@@ -172,17 +172,6 @@ CANVAS/
 ├── Abstract_figure/           # Figures used for abstract or manuscript illustration
 │   └── CANVAS_image.png       # Thumbnail of CANVAS
 │
-├── AI_Agent/                  # Module 4: AI-Agent for spatial feature interpretation
-│   │   Instruction for AI agent.docx   # Documentation of AI-agent usage
-│   │   README.md                        # Module-specific documentation
-│   │   requirements.txt                 # Dependencies for AI-agent module
-│   │   run.py                           # Main script to launch AI-agent
-│   │   spatial_agent.py                 # Core implementation of AI-agent
-│   │
-│   └── data/                            # Supporting annotation files for AI-agent
-│       ├── Feature_annotation.xlsx      # Definitions and biological annotation of spatial features
-│       └── Habitat_annotation.docx      # Annotation of habitats and ecological interpretation
-│
 ├── Demo_data/                 # Example datasets for demonstration
 │   ├── 28000_56224.png        # Example tissue image (demo figure)
 │   ├── 67424_15680.png        # Example tissue image (demo figure)
