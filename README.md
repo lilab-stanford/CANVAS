@@ -75,33 +75,6 @@ Rscript Feature_selection_modeling/feature_selection_modeling.R
 
 **Output:** Refined panels of spatial biomarkers and risk prediction models with translational relevance for immunotherapy.
 
-#### (4) AI-Agent module for spatial feature interpretation
-
-CANVAS incorporates a large language model (LLM)-driven AI agent to facilitate the systematic interpretation of high-dimensional spatial features by linking them to underlying spatial biology and relevant clinical priors.
-
-The agent generates structured, human-interpretable outputs across five key biological dimensions:
-
-- (i) Feature category
-- (ii) Characteristic cellular composition of the associated habitat
-- (iii) Description of the encoded spatial property
-- (iv) Tendency for topological coupling with other habitats
-- (v) Potential biological and clinical relevance
-
-**Setup:**
-
-```bash
-export OPENAI_API_KEY="<your-openai-api-key>"
-# Optional: only if you route through a custom endpoint
-export OPENAI_BASE_URL="https://your-custom-endpoint"
-```
-**Run:**
-
-```bash
-python AI_Agent/run.py
-```
-**Note:** Replace the default API key with your own in spatial_agent.py.
-**Output:** An interpretable annotation layer that contextualizes model-derived spatial features within tissue architecture, ecological topology, and clinical significance.
-
 ---
 
 ### 🔬 Applications
