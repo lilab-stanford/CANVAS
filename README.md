@@ -136,37 +136,81 @@ print("Saved")
 ### 📂 Directory Structure
 
 ```
-CANVAS/
+├── CANVAS/
+│   │
+│   │   demo.ipynb                 # Example Jupyter notebook demonstrating CANVAS workflow
+│   │   README.md                  # Project documentation and usage instructions
+│   │   requirements.txt           # Python dependencies for running CANVAS
+│   │
+│   ├── Abstract_figure/           # Figures used for abstract or manuscript illustration
+│   │   └── CANVAS_image.png       # Thumbnail of CANVAS
+│   │
+│   ├── Demo_data/                 # Example datasets for demonstration
+│   │   ├── 28000_56224.png        # Example tissue image (demo figure)
+│   │   ├── 67424_15680.png        # Example tissue image (demo figure)
+│   │   ├── output.csv             # Example model output (demo results)
+│   │
+│   ├── Habitat_prediction/        # Module 1: CN-to-habitat prediction using vision–language model
+│   │   ├── api.py                 # API wrapper for model inference
+│   │   ├── cn_assignment.py       # Co-registers CODEX and H&E images at single-cell resolution
+│   │   ├── habitat_prediction.py  # Predicts ecological habitats from CN annotations
+│   │   ├── habitat_training.py    # Trains the vision–language model for habitat prediction
+│   │   └── model.py               # Core model architecture definition
+│   │
+│   ├── Feature_generation/        # Module 2: Habitat-level spatial feature generation
+│   │   ├── Distance_calculation.py  # Computes pairwise distances among habitats
+│   │   ├── Habitat_freq.R           # Quantifies habitat frequency per sample
+│   │   ├── Habitat_interaction.py   # Computes inter-habitat interactions
+│   │   ├── Spatial_diversity.R      # Calculates diversity indices (Shannon, Simpson, etc.)
+│   │   ├── Spatial_entropy.R        # Computes spatial transition entropy (STE)
+│   │   └── Spatial_metrics.R        # Master script for habitat-level spatial dispersion
+│   │
+│   └── Feature_selection_modeling/   # Module 3: Feature selection and prognostic modeling
+│       └── feature_selection_modeling.R  # Performs Bootstrap LASSO, random forest, Cox regression
 │
-│   demo.ipynb                 # Example Jupyter notebook demonstrating CANVAS workflow
-│   README.md                  # Project documentation and usage instructions
-│   requirements.txt           # Python dependencies for running CANVAS
-│
-├── Abstract_figure/           # Figures used for abstract or manuscript illustration
-│   └── CANVAS_image.png       # Thumbnail of CANVAS
-│
-├── Demo_data/                 # Example datasets for demonstration
-│   ├── 28000_56224.png        # Example tissue image (demo figure)
-│   ├── 67424_15680.png        # Example tissue image (demo figure)
-│   ├── output.csv             # Example model output (demo results)
-│
-├── Feature_generation/        # Module 2: Habitat-level spatial feature generation
-│   ├── Distance_calculation.py  # Computes pairwise distances among habitats
-│   ├── Habitat_freq.R           # Quantifies habitat frequency per sample
-│   ├── Habitat_interaction.py   # Computes inter-habitat interactions
-│   ├── Spatial_diversity.R      # Calculates diversity indices (Shannon, Simpson, etc.)
-│   ├── Spatial_entropy.R        # Computes spatial transition entropy (STE)
-│   └── Spatial_metrics.R        # Master script for habitat-level spatial dispersion
-│
-├── Feature_selection_modeling/   # Module 3: Feature selection and prognostic modeling
-│   └── feature_selection_modeling.R  # Performs Bootstrap LASSO, random forest, Cox regression
-│
-└── Habitat_prediction/         # Module 1: CN-to-habitat prediction using vision–language model
-    ├── api.py                  # API wrapper for model inference
-    ├── cn_assignment.py        # Co-registers CODEX and H&E images at single-cell resolution
-    ├── habitat_prediction.py   # Predicts ecological habitats from CN annotations
-    ├── habitat_training.py     # Trains the vision–language model for habitat prediction
-    └── model.py     # Core model architecture definition
+└── Downstream_Analysis/
+    │
+    ├── Figure1/                  # Cell composition, annotation, and compartment-level analyses
+    │   ├── Cell_Type_Annotation_in_WSI_Cohort.R       # Cell type annotation in WSI cohort
+    │   ├── Cell_Type_Annotation_in_TMA1.R             # Cell type annotation in TMA cohort 1
+    │   ├── Cell_Type_Annotation_in_TMA2.R             # Cell type annotation in TMA cohort 2
+    │   ├── Cell_Type_Fraction_Comparison.R            # Compares cell-type fractions across groups
+    │   ├── Cellular_Compartment_Comparison.R          # Compares major cell compartments
+    │   └── markers.csv                                # Marker reference table for annotation
+    │
+    ├── Figure2/                  # Cell interaction, co-occurrence, and network motif analyses
+    │   ├── Cell_Cell_Co_Occurrence.R                  # Quantifies spatial co-occurrence across samples
+    │   ├── Cell_Cell_Interaction.txt                  # Generates cell-cell interaction analysis
+    │   ├── Cell_Type_Clinical_Parameters.R            # Associates cell abundance with clinical parameters
+    │   └── GNN_Network_Triplet_Motif_Analysis.txt     # GNN-based triplet motif and cell network analysis
+    │
+    ├── Figure3/                  # Neighborhood, distance, ecological unit, and proximity analyses
+    │   ├── Cell_Cell_Distance_Analysis.R              # Analyzes spatial distances between cell types
+    │   ├── Cell_State_Ecological_Unit_Analysis.R      # Defines and analyzes cell-state ecological units
+    │   ├── Cellular_Neighborhood_Comparison.R         # Compares cellular neighborhood patterns
+    │   ├── Cellular_Neighborhood_Generation.txt       # Generates cellular neighborhood annotations
+    │   ├── Distance_and_Proximity_Density.txt         # Generates distance and proximity density
+    │   └── Proximity_Density_Analysis.R               # Analyzes proximity density of cells across CNs
+    │
+    ├── Figure4/                  # CANVAS model performance and molecular/clinical associations
+    │   ├── CANVAS_model.txt                          # CANVAS model architecture
+    │   ├── CANVAS_training.txt                       # CANVAS training procedure and settings
+    │   ├── CN_Assignment.txt                         # CN assignment workflow
+    │   ├── CNV_and_SNV_Associations.R                # Associates habitats with CNV and SNV
+    │   ├── Habitat_Prediction.txt                    # Habitat prediction workflow summary
+    │   ├── Pathway_and_IO_Signature_Analysis.R       # Pathway and immuno-oncology signature analysis
+    │   ├── RNA_Seq_Cell_Fraction_Analysis.R          # RNA-seq-based cell fraction analysis
+    │   └── Training_Validation_and_Testing_Metrics.R # Summarizes model performance metrics
+    │
+    └── Figure5/                  # Habitat-derived prognostic feature construction and modeling
+        ├── Feature_Dispersion.txt                    # Habitat spatial dispersion feature generation
+        ├── Feature_Distance.txt                      # Distance feature generation
+        ├── Feature_Diversity.R                       # Diversity feature analysis
+        ├── Feature_Entropy.R                         # Entropy feature analysis
+        ├── Feature_Interaction.txt                   # Habitat interaction feature generation
+        ├── Feature_Relative_Abundance.R              # Relative abundance feature analysis
+        ├── Feature_Selection.R                       # Feature selection workflow
+        └── Prognostic_Model_Construction.R           # Prognostic model construction and evaluation
 ```
 
 ### 📄 Citation
