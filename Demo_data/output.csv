@@ -1,0 +1,3 @@
+image_path,prob_class_0,prob_class_1,prob_class_2,prob_class_3,prob_class_4,prob_class_5,prob_class_6,prob_class_7,prob_class_8,prob_class_9,prob_class_10,pred,CN_label
+Demo_data/67424_15680.png,5.36E-06,0.94000083,5.32E-07,1.18E-08,6.08E-05,4.78E-06,2.52E-05,0.059595633,5.14E-06,1.19E-06,0.000300455,1,CN01
+Demo_data/28000_56224.png,5.07E-11,9.50E-05,0.000115333,0.21483292,0.00275335,1.57E-07,2.04E-08,0.04376124,0.73308897,0.001292979,0.004060037,8,CN08
