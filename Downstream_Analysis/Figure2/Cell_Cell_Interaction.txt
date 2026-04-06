@@ -1,0 +1,497 @@
+# =========================================================
+# Cell-cell interaction workflow
+# Part 1: Export Seurat data and run scimap interaction analysis
+# Part 2: Summarize significant interactions by subtype and grade
+# Part 3: Export CN composition summaries from AnnData
+# =========================================================
+
+
+# =========================================================
+# Python section: run scimap spatial interaction analysis
+# =========================================================
+import os
+import numpy as np
+import pandas as pd
+import anndata as ad
+import scanpy as sc
+import scimap as sm
+
+# -------------------------
+# Define paths
+# -------------------------
+work_dir = "/cell.anno/CCI_results"
+os.chdir(work_dir)
+
+meta_file = "scimap.meta.data.csv"
+count_file = "count.matrix.csv"
+
+# -------------------------
+# Load metadata and count matrix
+# -------------------------
+meta = pd.read_csv(meta_file, index_col=0, low_memory=False)
+data = pd.read_csv(count_file, index_col=0)
+
+# -------------------------
+# Build AnnData object
+# -------------------------
+adata = ad.AnnData(data)
+adata.obs = meta.loc[adata.obs_names, :].copy()
+
+marker_list = data.columns.tolist()
+adata.uns["all_markers"] = marker_list
+
+# -------------------------
+# Run spatial distance and interaction
+# -------------------------
+adata = sm.tl.spatial_distance(adata, phenotype="phenotype")
+
+np.random.seed(42)
+adata = sm.tl.spatial_interaction(
+    adata,
+    method="radius",
+    radius=80,
+    imageid="imageid",
+    label="spatial_interaction_radius",
+    permutation=1000
+)
+
+# -------------------------
+# Export interaction results
+# -------------------------
+adata.uns["spatial_interaction_radius"].to_csv("spatial_interaction_results.csv", index=True)
+
+
+# =========================================================
+# R section: export Seurat data for scimap
+# =========================================================
+rm(list = ls())
+
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(data.table)
+})
+
+base_dir <- "/cell.anno"
+cci_dir  <- file.path(base_dir, "CCI_results")
+dens_dir <- file.path(base_dir, "cell.density.res")
+
+dir.create(cci_dir, recursive = TRUE, showWarnings = FALSE)
+
+codex.obj <- readRDS(file.path(dens_dir, "codex.obj.update.337.rds"))
+
+scimap.meta.data <- codex.obj@meta.data
+scimap.meta.data$cell.uni.id <- rownames(scimap.meta.data)
+
+fwrite(
+  scimap.meta.data,
+  file = file.path(cci_dir, "scimap.meta.data.csv"),
+  sep = ",",
+  row.names = TRUE
+)
+
+count.matrix <- as.data.frame(t(codex.obj@assays$RNA$counts))
+fwrite(
+  count.matrix,
+  file = file.path(cci_dir, "count.matrix.csv"),
+  sep = ",",
+  row.names = TRUE
+)
+
+
+# =========================================================
+# R section: summarize interaction results by subtype
+# =========================================================
+rm(list = ls())
+
+suppressPackageStartupMessages({
+  library(data.table)
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+  library(zellkonverter)
+})
+
+base_dir <- "/cell.anno"
+cci_dir  <- file.path(base_dir, "CCI_results")
+dens_dir <- file.path(base_dir, "cell.density.res")
+
+sample.inf <- read.csv(
+  file = file.path(dens_dir, "sample.inf.comb_20240701.new.csv"),
+  header = TRUE,
+  row.names = 1,
+  as.is = TRUE
+)
+
+interaction_data <- read.csv(
+  file = file.path(cci_dir, "spatial_interaction_results.csv"),
+  header = TRUE,
+  row.names = 1,
+  as.is = TRUE
+)
+
+# -------------------------
+# Reshape wide interaction output to long format
+# -------------------------
+interaction_long <- interaction_data %>%
+  pivot_longer(
+    cols = -c(phenotype, neighbour_phenotype),
+    names_to = c(".value", "core_id"),
+    names_pattern = "(.*)_(\\d+)"
+  )
+
+colnames(interaction_long)[1:2] <- c("from", "to")
+colnames(interaction_long)[4:5] <- c("score", "pvalue")
+interaction_long$core_id <- paste0("Study_ID_", interaction_long$core_id)
+
+# -------------------------
+# Keep significant interactions only
+# -------------------------
+significant_interactions <- interaction_long %>%
+  dplyr::filter(pvalue < 0.05)
+
+significant_interactions$from.to.group <- paste0(
+  significant_interactions$from, "_", significant_interactions$to
+)
+
+sample.inf$core_id <- as.character(sample.inf$Study.ID)
+significant_interactions$core_id <- as.character(significant_interactions$core_id)
+
+joined_data <- left_join(significant_interactions, sample.inf, by = "core_id")
+
+significant_interactions <- dplyr::select(
+  joined_data,
+  from, to, core_id, score, pvalue, from.to.group, subtype
+)
+
+# -------------------------
+# Average interaction score by subtype
+# -------------------------
+average_scores <- significant_interactions %>%
+  group_by(from.to.group, subtype) %>%
+  summarise(mean_score = mean(score, na.rm = TRUE), .groups = "drop") %>%
+  separate(from.to.group, into = c("from", "to"), sep = "_")
+
+write.csv(
+  average_scores,
+  file = file.path(cci_dir, "subtype_CCI_score.csv"),
+  row.names = FALSE
+)
+
+# -------------------------
+# Plot subtype-level interaction heatmap
+# -------------------------
+color.value.anno <- c(
+  "Cancer.cell"   = "#B17A86",
+  "Tcyto"         = "#6BD089",
+  "Th"            = "#A5CA6B",
+  "Treg"          = "#D8E063",
+  "NK.like"       = "#138535",
+  "Neutrophil"    = "#00D5F2",
+  "CAF"           = "#FFCB00",
+  "Smooth.muscle" = "#E19F73",
+  "Endo"          = "#F08B1E",
+  "Plasma.cell"   = "#75C5D9",
+  "Bcell"         = "#2DA2BF",
+  "Mono"          = "#7A297B",
+  "M1"            = "#C785C8",
+  "M2"            = "#BDB6D6",
+  "DCs"           = "#586B8C",
+  "Others"        = "gray90"
+)
+
+average_scores$from <- factor(average_scores$from, levels = names(color.value.anno))
+average_scores$to   <- factor(average_scores$to, levels = rev(names(color.value.anno)))
+
+plot_df <- average_scores %>%
+  mutate(
+    y_pos = as.numeric(factor(to)),
+    subtype_offset = ifelse(subtype == "adeno", 0.5, 0),
+    label_pos = y_pos + 0.25
+  )
+
+p_subtype <- ggplot(plot_df, aes(x = from, y = y_pos + subtype_offset)) +
+  geom_tile(aes(fill = mean_score), height = 0.5, width = 0.9) +
+  geom_tile(
+    aes(y = label_pos),
+    height = 1,
+    width = 1,
+    fill = NA,
+    color = "black",
+    linewidth = 0.5
+  ) +
+  scale_fill_gradient2(
+    low = "blue",
+    mid = "white",
+    high = "red",
+    midpoint = 0,
+    space = "Lab"
+  ) +
+  scale_y_continuous(
+    breaks = unique(plot_df$label_pos),
+    labels = unique(plot_df$to)
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5),
+    axis.text.y = element_text(angle = 0, hjust = 1),
+    panel.spacing = unit(0, "lines"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.title = element_blank(),
+    axis.ticks = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+pdf(file.path(cci_dir, "TMA_CCI_heatmap.subtype.pdf"), width = 7.73, height = 6.90)
+print(p_subtype)
+dev.off()
+
+
+# =========================================================
+# R section: summarize interaction results by subtype and grade
+# =========================================================
+sample.inf <- read.csv(
+  file = file.path(dens_dir, "sample.inf.comb_20240701.new.csv"),
+  header = TRUE,
+  row.names = 1,
+  as.is = TRUE
+)
+
+interaction_data <- read.csv(
+  file = file.path(cci_dir, "spatial_interaction_results.csv"),
+  header = TRUE,
+  row.names = 1,
+  as.is = TRUE
+)
+
+interaction_long <- interaction_data %>%
+  pivot_longer(
+    cols = -c(phenotype, neighbour_phenotype),
+    names_to = c(".value", "core_id"),
+    names_pattern = "(.*)_(\\d+)"
+  )
+
+colnames(interaction_long)[1:2] <- c("from", "to")
+colnames(interaction_long)[4:5] <- c("score", "pvalue")
+interaction_long$core_id <- paste0("Study_ID_", interaction_long$core_id)
+
+significant_interactions <- interaction_long %>%
+  dplyr::filter(pvalue < 0.05)
+
+significant_interactions$from.to.group <- paste0(
+  significant_interactions$from, "_", significant_interactions$to
+)
+
+sample.inf$core_id <- as.character(sample.inf$Study.ID)
+significant_interactions$core_id <- as.character(significant_interactions$core_id)
+
+joined_data <- left_join(significant_interactions, sample.inf, by = "core_id")
+
+significant_interactions <- dplyr::select(
+  joined_data,
+  from, to, core_id, score, pvalue, from.to.group, subtype, Grade.new
+)
+
+average_scores_grade <- significant_interactions %>%
+  group_by(from.to.group, subtype, Grade.new) %>%
+  summarise(mean_score = mean(score, na.rm = TRUE), .groups = "drop") %>%
+  separate(from.to.group, into = c("from", "to"), sep = "_") %>%
+  filter(!is.na(Grade.new))
+
+write.csv(
+  average_scores_grade,
+  file = file.path(cci_dir, "CCI_sum.res_results.csv"),
+  row.names = FALSE
+)
+
+average_scores_grade$from <- factor(average_scores_grade$from, levels = names(color.value.anno))
+average_scores_grade$to   <- factor(average_scores_grade$to, levels = rev(names(color.value.anno)))
+
+levels_to_set <- rev(c(
+  "adeno.well",
+  "adeno.moderate",
+  "adeno.poor",
+  "squamous cell.well",
+  "squamous cell.moderate",
+  "squamous cell.poor"
+))
+
+plot_grade_df <- average_scores_grade %>%
+  mutate(
+    subtype_grade = interaction(subtype, Grade.new, sep = "."),
+    subtype_grade = factor(subtype_grade, levels = levels_to_set),
+    y_pos = as.numeric(factor(to)),
+    x_pos = as.numeric(factor(from)),
+    offset = (as.numeric(subtype_grade) - 1) / 6
+  )
+
+p_grade <- ggplot(plot_grade_df, aes(x = x_pos, y = y_pos + offset)) +
+  geom_tile(aes(fill = mean_score), height = 1 / 6, width = 1, color = NA) +
+  geom_tile(
+    data = plot_grade_df %>% group_by(x_pos, y_pos) %>% summarise(.groups = "drop"),
+    aes(x = x_pos, y = y_pos + 0.5 - 1 / 12),
+    fill = NA,
+    color = "black",
+    linewidth = 0.5,
+    height = 1,
+    width = 1
+  ) +
+  scale_fill_gradient2(
+    low = "blue",
+    mid = "white",
+    high = "red",
+    midpoint = 0,
+    space = "Lab",
+    name = "Interaction Score"
+  ) +
+  scale_y_continuous(
+    breaks = unique(plot_grade_df$y_pos + 0.5),
+    labels = unique(plot_grade_df$to)
+  ) +
+  scale_x_continuous(
+    breaks = unique(plot_grade_df$x_pos),
+    labels = unique(plot_grade_df$from)
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    axis.text.y = element_text(angle = 0, hjust = 1),
+    panel.spacing = unit(0, "lines"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.title = element_blank(),
+    axis.ticks = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+pdf(file.path(cci_dir, "TMA_CCI_heatmap_subtype.grade.pdf"), width = 9.69, height = 7.69)
+print(p_grade)
+dev.off()
+
+
+# =========================================================
+# R section: export CN composition results from h5ad
+# =========================================================
+library(zellkonverter)
+library(tidyverse)
+library(ComplexHeatmap)
+library(circlize)
+
+adata <- readH5AD(file.path(cci_dir, "codex.tma.adata.h5ad"))
+
+CN.metadata <- as.data.frame(adata@colData)
+spatial_lda_probability <- adata@metadata$spatial_lda_probability
+
+# -------------------------
+# Heatmap of motif probability by cell type
+# -------------------------
+spatial_lda_probability <- cbind.data.frame(
+  Cell_Type = rownames(spatial_lda_probability),
+  spatial_lda_probability
+)
+
+data_long <- spatial_lda_probability %>%
+  pivot_longer(
+    cols = -Cell_Type,
+    names_to = "Motif",
+    values_to = "Probability"
+  )
+
+data_long$Cell_Type <- factor(
+  data_long$Cell_Type,
+  levels = rev(names(color.value.anno))
+)
+
+p_motif_heatmap <- ggplot(data_long, aes(x = Motif, y = Cell_Type, fill = Probability)) +
+  geom_tile() +
+  scale_fill_gradient2(
+    low = "blue",
+    mid = "white",
+    high = "red",
+    midpoint = 0.1,
+    space = "Lab",
+    name = "Probability"
+  ) +
+  labs(x = "Motif", y = "Cell Type") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5),
+    axis.title = element_text(size = 12, face = "bold")
+  )
+
+pdf(file.path(cci_dir, "Motif_probability_heatmap.pdf"), width = 7, height = 6)
+print(p_motif_heatmap)
+dev.off()
+
+# -------------------------
+# Stacked motif composition plot
+# -------------------------
+p_motif_bar <- ggplot(data_long, aes(x = Motif, y = Probability, fill = Cell_Type)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_manual(values = color.value.anno) +
+  labs(x = "Motif", y = "Percentage", fill = "Cell Type") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    axis.title = element_text(size = 12, face = "bold")
+  )
+
+pdf(file.path(cci_dir, "Motif_probability_stacked_barplot.pdf"), width = 7, height = 6)
+print(p_motif_bar)
+dev.off()
+
+# -------------------------
+# CN enrichment heatmap by phenotype
+# -------------------------
+aggregated_data <- CN.metadata %>%
+  group_by(spatial_lda_kmeans, phenotype) %>%
+  summarise(Count = n(), .groups = "drop")
+
+proportion_data <- aggregated_data %>%
+  group_by(spatial_lda_kmeans) %>%
+  mutate(Proportion = Count / sum(Count)) %>%
+  ungroup()
+
+zscore_data <- proportion_data %>%
+  group_by(phenotype) %>%
+  mutate(Z_Score = (Proportion - mean(Proportion)) / sd(Proportion)) %>%
+  ungroup()
+
+zscore_data <- zscore_data %>%
+  mutate(
+    spatial_lda_kmeans = as.integer(stringr::str_remove(spatial_lda_kmeans, "CN")),
+    spatial_lda_kmeans = spatial_lda_kmeans + 1,
+    spatial_lda_kmeans = sprintf("CN%02d", spatial_lda_kmeans),
+    phenotype = factor(phenotype, levels = rev(names(color.value.anno)))
+  )
+
+data_matrix <- dplyr::select(zscore_data, spatial_lda_kmeans, phenotype, Z_Score) %>%
+  tidyr::spread(key = phenotype, value = Z_Score) %>%
+  tibble::column_to_rownames("spatial_lda_kmeans") %>%
+  as.matrix()
+
+data_matrix <- data_matrix[, names(color.value.anno), drop = FALSE]
+
+col_fun <- colorRamp2(c(min(data_matrix, na.rm = TRUE), 0, max(data_matrix, na.rm = TRUE)),
+                      c("blue", "white", "red"))
+
+heatmap_plot <- Heatmap(
+  data_matrix,
+  name = "Z-Score",
+  col = col_fun,
+  cluster_rows = TRUE,
+  cluster_columns = TRUE,
+  show_row_names = TRUE,
+  show_column_names = TRUE,
+  row_names_gp = gpar(fontsize = 10),
+  column_names_gp = gpar(fontsize = 10),
+  column_title = "Cell Type",
+  heatmap_legend_param = list(title = "CN enrichment score"),
+  border = TRUE,
+  rect_gp = gpar(col = NA, lwd = 0)
+)
+
+pdf(file.path(cci_dir, "LUAD_LUSC_CN.enrichment_heatmap.pdf"), width = 7.80, height = 8.19)
+draw(heatmap_plot, heatmap_legend_side = "bottom")
+dev.off()

@@ -1,0 +1,116 @@
+import os
+import pandas as pd
+import anndata as ad
+import scimap as sm
+
+
+# =========================================================
+# Paths
+# =========================================================
+
+
+meta_file = os.path.join(base_dir, "rawdata", "TMA_CNs_metadata.csv")
+count_file = os.path.join(base_dir, "rawdata", "tma.count.data.csv")
+
+prox_root = os.path.join(base_dir, "proximity_results")
+dist_out_file = os.path.join(base_dir, "results", "spatial_distance.csv")
+
+os.makedirs(prox_root, exist_ok=True)
+os.makedirs(os.path.dirname(dist_out_file), exist_ok=True)
+
+
+# =========================================================
+# Load minimal metadata and count matrix
+# =========================================================
+meta_cols = [
+    "cell.id.uniq",
+    "X_centroid",
+    "Y_centroid",
+    "spatial.core.id",
+    "raw.cell.anno.id",
+    "spatial_lda_kmeans",
+]
+
+count_cols = [
+    "cell.id.uniq",
+    "CD8",
+]
+
+tma_meta = pd.read_csv(
+    meta_file,
+    index_col="cell.id.uniq",
+    usecols=meta_cols,
+    low_memory=False,
+)
+
+tma_count = pd.read_csv(
+    count_file,
+    index_col="cell.id.uniq",
+    usecols=count_cols,
+    low_memory=False,
+)
+
+# Keep only shared cells and aligned order
+common_ids = tma_meta.index.intersection(tma_count.index)
+tma_meta = tma_meta.loc[common_ids].copy()
+tma_count = tma_count.loc[common_ids].copy()
+
+
+# =========================================================
+# Build AnnData object
+# =========================================================
+adata = ad.AnnData(tma_count)
+adata.obs = tma_meta.copy()
+adata.raw = adata
+
+
+# =========================================================
+# Define cell pairs for proximity scoring
+# =========================================================
+cell_pairs = [
+    ("CAF_FAP", "CD8_Tcell"),
+    ("Neutrophil_KI67", "CD8_Tcell"),
+    ("Neutrophil_HIF1A", "CD8_Tcell"),
+    ("CAF_FAP", "CD8_T_GZMB"),
+    ("Neutrophil_KI67", "CD8_T_GZMB"),
+    ("Neutrophil_HIF1A", "CD8_T_GZMB"),
+]
+
+
+# =========================================================
+# Run proximity scoring for each cell pair
+# =========================================================
+for cell_a, cell_b in cell_pairs:
+    pair_name = f"{cell_a}_{cell_b}"
+    pair_dir = os.path.join(prox_root, pair_name)
+    os.makedirs(pair_dir, exist_ok=True)
+
+    adata = sm.tl.spatial_pscore(
+        adata,
+        proximity=[cell_a, cell_b],
+        score_by="spatial_lda_kmeans",
+        phenotype="raw.cell.anno.id",
+        method="radius",
+        radius=80,
+        imageid="spatial.core.id",
+    )
+
+    pscore_df = adata.uns["spatial_pscore"].copy()
+    pscore_df.to_csv(os.path.join(pair_dir, "spatial_pscore.csv"), index=True)
+
+
+# =========================================================
+# Run spatial distance across detailed cell states within habitat
+# =========================================================
+adata = sm.tl.spatial_distance(
+    adata=adata,
+    x_coordinate="X_centroid",
+    y_coordinate="Y_centroid",
+    phenotype="raw.cell.anno.id",
+    subset=None,
+    imageid="spatial_lda_kmeans",
+    label="spatial_distance",
+)
+
+distance_df = adata.uns["spatial_distance"].copy()
+distance_df.to_csv(dist_out_file, index=True)

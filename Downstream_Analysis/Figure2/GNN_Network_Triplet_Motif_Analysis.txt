@@ -1,0 +1,104 @@
+# =========================================================
+# Part 1. Python: build a global CN graph and run GCN scoring
+# =========================================================
+
+import os
+import pandas as pd
+import numpy as np
+import torch
+import torch.nn.functional as F
+from torch_geometric.data import Data
+from torch_geometric.nn import GCNConv
+
+# -------------------------
+# Define paths
+# -------------------------
+csv_path = "/TMA_GNN_network/results/results/cn_edge_counts.csv"
+save_dir = "/TMA_GNN_network/results/GNN_results"
+os.makedirs(save_dir, exist_ok=True)
+
+# -------------------------
+# Load CN edge counts
+# -------------------------
+edges_df = pd.read_csv(csv_path)
+
+cn_labels = sorted(set(edges_df["CN_from"]) | set(edges_df["CN_to"]))
+cn_to_index = {cn: idx for idx, cn in enumerate(cn_labels)}
+
+edge_index = torch.tensor(
+    [
+        [cn_to_index[f] for f in edges_df["CN_from"]],
+        [cn_to_index[t] for t in edges_df["CN_to"]],
+    ],
+    dtype=torch.long
+)
+edge_weight = torch.tensor(edges_df["weight"].values, dtype=torch.float)
+
+# -------------------------
+# Initialize node features using graph degree
+# -------------------------
+num_nodes = len(cn_labels)
+x = torch.zeros((num_nodes, 1), dtype=torch.float)
+
+for idx in range(num_nodes):
+    degree = ((edge_index[0] == idx) | (edge_index[1] == idx)).sum().item()
+    x[idx, 0] = degree
+
+data = Data(x=x, edge_index=edge_index, edge_attr=edge_weight)
+
+# -------------------------
+# Define GCN model
+# -------------------------
+class GCN(torch.nn.Module):
+    def __init__(self, hidden_channels=8):
+        super().__init__()
+        self.conv1 = GCNConv(1, hidden_channels)
+        self.conv2 = GCNConv(hidden_channels, 1)
+
+    def forward(self, data):
+        x, edge_index, edge_weight = data.x, data.edge_index, data.edge_attr
+        x = self.conv1(x, edge_index, edge_weight)
+        x = F.relu(x)
+        x = self.conv2(x, edge_index, edge_weight)
+        return x
+
+# -------------------------
+# Train GCN to reconstruct node features
+# -------------------------
+torch.manual_seed(1)
+model = GCN(hidden_channels=8)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+model.train()
+for epoch in range(200):
+    optimizer.zero_grad()
+    out = model(data)
+    loss = F.mse_loss(out, data.x)
+    loss.backward()
+    optimizer.step()
+
+# -------------------------
+# Export node scores and graph edges
+# -------------------------
+model.eval()
+with torch.no_grad():
+    node_scores = model(data).squeeze().cpu().numpy()
+
+df_all_nodes = pd.DataFrame({
+    "CN_node": cn_labels,
+    "GCN_score": np.round(node_scores, 4)
+})
+df_all_nodes.to_csv(os.path.join(save_dir, "all_cn_nodes.csv"), index=False)
+
+edge_data_full = []
+edge_weights_np = edge_weight.cpu().numpy()
+
+for idx in range(edge_index.shape[1]):
+    f_idx = edge_index[0, idx].item()
+    t_idx = edge_index[1, idx].item()
+    edge_data_full.append((cn_labels[f_idx], cn_labels[t_idx], int(edge_weights_np[idx])))
+
+df_all_edges = pd.DataFrame(edge_data_full, columns=["CN_from", "CN_to", "weight"])
+df_all_edges.to_csv(os.path.join(save_dir, "all_cn_edges.csv"), index=False)
+
+print("Saved GCN node scores and graph edges to:", save_dir)

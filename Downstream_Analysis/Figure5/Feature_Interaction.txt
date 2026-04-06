@@ -1,0 +1,114 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+import logging
+import os
+from concurrent.futures import ProcessPoolExecutor
+
+import anndata as ad
+import pandas as pd
+import scimap as sm
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s: %(message)s"
+)
+
+
+# =========================================================
+# Paths
+# =========================================================
+INPUT_FILE = "/LUNG.IO.csv"
+OUTPUT_DIR = "/results"
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+
+# =========================================================
+# Load minimal input for spatial interaction analysis
+# =========================================================
+def load_data():
+    meta_cols = [
+        "patch.id",
+        "cell.id",
+        "X_centroid",
+        "Y_centroid",
+        "imageid",
+        "CN_label",
+        "tu.det_benign",
+    ]
+
+    count_cols = [
+        "patch.id",
+        "tu.det_benign",
+    ]
+
+    ws_meta = pd.read_csv(
+        INPUT_FILE,
+        index_col="patch.id",
+        usecols=meta_cols,
+        low_memory=False
+    )
+
+    ws_count = pd.read_csv(
+        INPUT_FILE,
+        index_col="patch.id",
+        usecols=count_cols,
+        low_memory=False
+    )
+
+    common_ids = ws_meta.index.intersection(ws_count.index)
+    ws_meta = ws_meta.loc[common_ids].copy()
+    ws_count = ws_count.loc[common_ids].copy()
+
+    adata = ad.AnnData(ws_count)
+    adata.obs = ws_meta
+    adata.raw = adata
+
+    return adata
+
+
+# =========================================================
+# Run one radius-specific spatial interaction analysis
+# =========================================================
+def calculate_spatial_interaction(radius):
+    try:
+        logging.info(f"Processing radius {radius}")
+
+        adata = load_data()
+
+        adata = sm.tl.spatial_interaction(
+            adata,
+            method="radius",
+            radius=radius,
+            pval_method="zscore",
+            permutation=1000,
+            phenotype="CN_label",
+            imageid="imageid",
+            x_coordinate="X_centroid",
+            y_coordinate="Y_centroid",
+            label="spatial_interaction_radius"
+        )
+
+        result_df = pd.DataFrame(adata.uns["spatial_interaction_radius"])
+        result_file = os.path.join(
+            OUTPUT_DIR,
+            f"spatial_interaction_radius_{radius}.csv"
+        )
+        result_df.to_csv(result_file, index=True)
+
+        logging.info(f"Completed radius {radius}")
+
+    except Exception as e:
+        logging.error(f"Failed radius {radius}: {e}")
+
+
+# =========================================================
+# Main
+# =========================================================
+if __name__ == "__main__":
+    radii = range(1001)
+
+    with ProcessPoolExecutor(max_workers=30) as executor:
+        list(executor.map(calculate_spatial_interaction, radii))

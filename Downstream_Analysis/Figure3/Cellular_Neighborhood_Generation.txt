@@ -1,0 +1,174 @@
+# =========================================================
+# CN generation workflow
+# Part 1: Export TMA and WS metadata/count matrices
+# Part 2: Run spatial clustering on the integrated AnnData
+# =========================================================
+
+# =========================================================
+# R section: export TMA and WS data for CN generation
+# =========================================================
+rm(list = ls())
+
+suppressPackageStartupMessages({
+  library(data.table)
+  library(Seurat)
+})
+
+# -------------------------
+# Define paths
+# -------------------------
+base_dir <- "/seurat.obj.comb/cell.anno"
+ws_meta_dir <- file.path(base_dir, "/meta.data")
+ws_seurat_dir <- file.path(base_dir, "/each.sample.seurat")
+tma_obj_file <- file.path(base_dir, "cell.density.res/codex.obj.update.rds")
+
+tma_out_dir <- file.path(base_dir, "TMA.WS.CN.comb.res/rawdata/TMA")
+ws_out_dir  <- file.path(base_dir, "TMA.WS.CN.comb.res/rawdata/WS")
+
+dir.create(tma_out_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(ws_out_dir, recursive = TRUE, showWarnings = FALSE)
+
+# -------------------------
+# 1. Export TMA metadata and count matrix
+# -------------------------
+tma.codex.obj <- readRDS(tma_obj_file)
+
+tma.metadata <- tma.codex.obj@meta.data
+tma.metadata <- cbind.data.frame(CellID = rownames(tma.metadata), tma.metadata)
+
+colnames(tma.metadata)[colnames(tma.metadata) == "spatial.core.id"] <- "imageid"
+colnames(tma.metadata)[colnames(tma.metadata) == "cell.anno.3st"] <- "cell.anno"
+
+tma.counts <- as.data.frame(t(tma.codex.obj@assays$RNA$counts))
+colnames(tma.counts) <- gsub(".", "-", colnames(tma.counts), fixed = TRUE)
+tma.counts <- cbind.data.frame(CellID = rownames(tma.counts), tma.counts)
+
+fwrite(
+  tma.metadata,
+  file = file.path(tma_out_dir, "tma.codex.metadata.csv"),
+  row.names = FALSE,
+  quote = FALSE,
+  sep = ",",
+  nThread = 20
+)
+
+fwrite(
+  tma.counts,
+  file = file.path(tma_out_dir, "tma.count.data.csv"),
+  row.names = FALSE,
+  quote = FALSE,
+  sep = ",",
+  nThread = 20
+)
+
+# -------------------------
+# 2. Export combined WS metadata and count matrix
+# -------------------------
+samples <- c(
+  "WS01_Scan2", "WS04_Scan1", "WS05_Scan1", "WS07_Scan1", "WS08_Scan1",
+  "WS09_Scan1", "WS12_Scan1", "WS17_Scan1", "WS21_Scan1", "WS27_Scan1"
+)
+
+all_metadata <- list()
+all_counts <- list()
+
+tma.meta.cols <- colnames(tma.metadata)
+
+for (sample in samples) {
+  metadata_file <- file.path(ws_meta_dir, paste0("SeuratObject_", sample, "_metadata.csv"))
+  seurat_file   <- file.path(ws_seurat_dir, paste0("SeuratObject_", sample, ".rds"))
+
+  metadata <- fread(metadata_file, header = TRUE, sep = ",", nThread = 20)
+  metadata <- as.data.frame(metadata)
+
+  colnames(metadata)[1] <- "CellID"
+  colnames(metadata)[colnames(metadata) == "predicted.id"] <- "cell.anno"
+
+  metadata <- metadata[, intersect(colnames(metadata), tma.meta.cols), drop = FALSE]
+  metadata <- metadata[, tma.meta.cols[tma.meta.cols %in% colnames(metadata)], drop = FALSE]
+
+  seurat_obj <- readRDS(seurat_file)
+  count_data <- as.data.frame(t(seurat_obj@assays$RNA$counts))
+  count_data <- cbind.data.frame(CellID = rownames(count_data), count_data)
+
+  all_metadata[[sample]] <- metadata
+  all_counts[[sample]] <- count_data
+}
+
+combined_metadata <- do.call(rbind, all_metadata)
+combined_counts <- do.call(rbind, all_counts)
+
+fwrite(
+  combined_metadata,
+  file = file.path(ws_out_dir, "metadata_combined.csv"),
+  row.names = FALSE,
+  quote = FALSE,
+  sep = ",",
+  nThread = 20
+)
+
+fwrite(
+  combined_counts,
+  file = file.path(ws_out_dir, "counts_combined.csv"),
+  row.names = FALSE,
+  quote = FALSE,
+  sep = ",",
+  nThread = 20
+)
+
+# =========================================================
+# Python section: run spatial clustering for CN generation
+# =========================================================
+# Save the block below as a .py script if needed
+
+# ---------------------------------------------------------
+# CN generation by spatial clustering
+# ---------------------------------------------------------
+import logging
+import scanpy as sc
+import scimap as sm
+
+# -------------------------
+# Define paths
+# -------------------------
+h5ad_file = "/results/scimap.CN/codex.tma.ws.comb.adata.h5ad"
+log_file = "/code/results.log"
+out_file = "/results/scimap.CN/tma.ws.meta.data.CN.anno.kmeans.final.csv"
+
+# -------------------------
+# Configure logging
+# -------------------------
+logging.basicConfig(
+    filename=log_file,
+    level=logging.INFO,
+    format="%(asctime)s:%(levelname)s:%(message)s"
+)
+
+# -------------------------
+# Load integrated AnnData object
+# -------------------------
+adata = sc.read_h5ad(h5ad_file)
+logging.info(f"Loaded AnnData object with shape: {adata.shape}")
+
+# -------------------------
+# Run k-means clustering on spatial LDA space
+# -------------------------
+for k in range(5, 21):
+    label = f"spatial_lda_kmeans.{k}"
+    logging.info(f"Running spatial clustering for k={k}")
+    adata = sm.tl.spatial_cluster(
+        adata,
+        df_name="spatial_lda",
+        method="kmeans",
+        k=k,
+        label=label,
+        verbose=False
+    )
+
+# -------------------------
+# Export clustering results
+# -------------------------
+adata.obs.to_csv(out_file, index=True)
+logging.info(f"Saved clustering results to: {out_file}")
+logging.info("\n" + adata.obs.head().to_string())
+logging.info("CN generation completed successfully.")
